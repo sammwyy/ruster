@@ -25,13 +25,20 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Args {
     target: String,
 
-    #[arg(short = 'x', long)]
+    #[arg(
+        short,
+        long,
+        help = "Extensions file to use, it will append the extension to the wordlist"
+    )]
+    extensions: Option<String>,
+
+    #[arg(short = 'x', long, help = "Add headers to the request")]
     headers: Option<Vec<String>>,
 
-    #[arg(short, long, default_value_t = 4)]
+    #[arg(short, long, default_value_t = 4, help = "Number of threads")]
     threads: usize,
 
-    #[arg(short, long)]
+    #[arg(short, long, help = "Wordlist file to use")]
     wordlist: String,
 }
 
@@ -67,6 +74,34 @@ fn get_wordlist(file_path: String) -> Vec<String> {
     wordlist
 }
 
+fn get_wordlist_with_ext(file_path: String, extension_path: Option<String>) -> Vec<String> {
+    let wordlist = get_wordlist(file_path);
+
+    if extension_path.is_none() {
+        return wordlist;
+    }
+
+    let mut wordlist_with_ext: Vec<String> = Vec::new();
+    let extension_path = extension_path.unwrap();
+    let file = File::open(extension_path).unwrap();
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let line = line.unwrap();
+
+        if line.is_empty() || line.starts_with("#") {
+            continue;
+        }
+
+        for word in &wordlist {
+            let word = line.replace("%", word);
+            wordlist_with_ext.push(word);
+        }
+    }
+
+    wordlist_with_ext
+}
+
 fn parse_headers(list: Option<Vec<String>>) -> HeaderMap {
     let mut headers = HeaderMap::new();
 
@@ -97,7 +132,7 @@ fn parse_headers(list: Option<Vec<String>>) -> HeaderMap {
 async fn start_buster(arg: Args) {
     let headers = parse_headers(arg.headers);
     let target = fix_target(arg.target);
-    let wordlist = get_wordlist(arg.wordlist);
+    let wordlist = get_wordlist_with_ext(arg.wordlist, arg.extensions);
     let threads = arg.threads;
 
     let client = Client::builder().default_headers(headers).build().unwrap();
@@ -111,7 +146,7 @@ async fn start_buster(arg: Args) {
                 let resp = client.get(&full_url).send().await?;
                 let status_code = resp.status().as_u16();
 
-                if status_code != 404 {
+                if status_code != 404 && status_code != 400 {
                     let status_display = format!("{}", status_code).green();
                     println!(
                         "{} {} {} ({})",
@@ -157,12 +192,16 @@ async fn main() {
         "Directory buster tool".bright_black()
     );
     debug_setting("Target", &args.target);
+    if args.extensions.is_some() {
+        let extensions = args.extensions.clone().unwrap();
+        debug_setting("Extensions", &extensions);
+    }
     if args.headers.is_some() {
         let headers = args.headers.clone().unwrap();
         debug_settings_list("Headers", &headers);
     }
-    debug_setting("List", &args.wordlist);
     debug_setting("Threads", &args.threads);
+    debug_setting("Wordlist", &args.wordlist);
     println!("");
 
     start_buster(args).await;

@@ -22,6 +22,7 @@ ruster -w /path/to/wordlist.txt http://{value}.example.com
 
 | Argument | Description | Type | Default | Required |
 | --- | --- | --- | --- | --- |
+| -e, --extensions | Extensions file to append to wordlist | File | None | ❌ |
 | -x, --header | Header to send with request | List(String) | None | ❌ |
-| -w, --wordlist | Path to wordlist | String | None | ✅ |
+| -w, --wordlist | Path to wordlist | File | None | ✅ |
 | -t, --threads | Number of threads | Integer | 4 | ❌ |
