@@ -38,6 +38,13 @@ struct Args {
     #[arg(short, long, default_value_t = 4, help = "Number of threads")]
     threads: usize,
 
+    #[arg(
+        short,
+        long,
+        help = "User agents file to use, it will randomize the user agent"
+    )]
+    user_agents: Option<String>,
+
     #[arg(short, long, help = "Wordlist file to use")]
     wordlist: String,
 }
@@ -129,11 +136,45 @@ fn parse_headers(list: Option<Vec<String>>) -> HeaderMap {
     headers
 }
 
+fn parse_uas(file: Option<String>) -> Vec<String> {
+    if file.is_none() {
+        return Vec::new();
+    }
+
+    let file = file.unwrap();
+    let file = File::open(file).unwrap();
+    let reader = BufReader::new(file);
+    let mut uas = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.unwrap();
+
+        if line.is_empty() || line.starts_with("#") {
+            continue;
+        }
+
+        uas.push(line);
+    }
+
+    uas
+}
+
+fn random_element(vec: Vec<String>) -> Option<String> {
+    if vec.is_empty() {
+        return None;
+    }
+
+    let random_index = rand::random::<usize>() % vec.len();
+    let element = vec[random_index].clone();
+    Some(element)
+}
+
 async fn start_buster(arg: Args) {
     let headers = parse_headers(arg.headers);
     let target = fix_target(arg.target);
     let wordlist = get_wordlist_with_ext(arg.wordlist, arg.extensions);
     let threads = arg.threads;
+    let uas: Vec<String> = parse_uas(arg.user_agents);
 
     let client = Client::builder().default_headers(headers).build().unwrap();
 
@@ -141,9 +182,16 @@ async fn start_buster(arg: Args) {
         .map(|value| {
             let client = client.clone();
             let full_url = target.replace("{value}", &value);
+            let ua = random_element(uas.clone());
 
             tokio::spawn(async move {
-                let resp = client.get(&full_url).send().await?;
+                let mut req = client.get(&full_url);
+
+                if ua.is_some() {
+                    req = req.header("User-Agent", ua.unwrap());
+                }
+
+                let resp = req.send().await?;
                 let status_code = resp.status().as_u16();
 
                 if status_code != 404 && status_code != 400 {
@@ -192,17 +240,24 @@ async fn main() {
         "Directory buster tool".bright_black()
     );
     debug_setting("Target", &args.target);
+
     if args.extensions.is_some() {
         let extensions = args.extensions.clone().unwrap();
         debug_setting("Extensions", &extensions);
     }
+
     if args.headers.is_some() {
         let headers = args.headers.clone().unwrap();
         debug_settings_list("Headers", &headers);
     }
+
     debug_setting("Threads", &args.threads);
     debug_setting("Wordlist", &args.wordlist);
-    println!("");
+
+    if args.user_agents.is_some() {
+        let user_agents = args.user_agents.clone().unwrap();
+        debug_setting("User agents", &user_agents);
+    }
 
     start_buster(args).await;
 }

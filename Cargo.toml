@@ -10,5 +10,6 @@ authors = ["Sammwy"]
 clap = { version = "4.4.7", features = ["derive"] }
 colored = "2.0.4"
 futures = "0.3.29"
+rand = "0.8.5"
 reqwest = "0.11.22"
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
