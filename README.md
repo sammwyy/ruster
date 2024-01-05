@@ -11,21 +11,34 @@ Directory buster tool written in Rust
 - [X] Randomize User agents
 - [X] Customize Headers
 - [X] Multithreading and parallelism
+- [X] Multiple modes
 
 ## 📋 Usage
 
 ```bash
+# Available modes:
+#   dir     -   Search for files or directories in the target
+#   fuzz    -   Fuzz the target with the wordlist, replacing {fuzz} with the word
+#   vhost   -   Search for Virtual-Hosts in the target
+#   dns     -   Search for Subdomains in the target
+
 # Usage:
-ruster [...options] target
+ruster <mode> [...options] <target>
 
 # Directory fuzzer.
-ruster -w /path/to/wordlist.txt http://example.com
+ruster dir -w /path/to/wordlist.txt http://example.com
+
+# File fuzzer
+ruster dir -w /path/to/wordlist.txt -e /path/to/extensions.txt http://example.com/
 
 # Query fuzzer.
-ruster -w /path/to/wordlist.txt http://example.com/?q={value}
+ruster dir -w /path/to/wordlist.txt http://example.com/?q={fuzz}
 
 # Subdomain fuzzer.
-ruster -w /path/to/wordlist.txt http://{value}.example.com
+ruster dns -w /path/to/wordlist.txt https://example.com
+
+# Virtual host fuzzer.
+ruster vhost -w /path/to/wordlist.txt http://example.com
 ```
 
 ## 📗 Arguments

@@ -50,20 +50,6 @@ struct Args {
     wordlist: String,
 }
 
-fn fix_target(target: String) -> String {
-    let target = if target.ends_with('/') {
-        target
-    } else {
-        format!("{}/", target)
-    };
-    let target = if target.contains("{value}") {
-        target
-    } else {
-        format!("{}{{value}}", target)
-    };
-    target
-}
-
 fn get_wordlist(file_path: String) -> Vec<String> {
     let file = File::open(file_path).unwrap();
     let reader = BufReader::new(file);
@@ -210,9 +196,20 @@ async fn main() {
         debug_setting("User agents", &user_agents);
     }
 
+    // Check arguments inconsistencies
+    let is_accept_ext = args.command == Mode::Dir || args.command == Mode::Fuzz;
+    if !is_accept_ext && args.extensions.is_some() {
+        println!(
+            "{} {}",
+            "Error:".red(),
+            "Extensions are not supported in VHost mode".bright_black()
+        );
+        return;
+    }
+
     // Start the buster
     let mode = args.command;
-    let target = fix_target(args.target);
+    let target = args.target;
     let headers = parse_headers(args.headers);
     let wordlist = get_wordlist_with_ext(args.wordlist, args.extensions);
     let uas: Vec<String> = parse_uas(args.user_agents);
