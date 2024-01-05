@@ -1,16 +1,16 @@
+use buster::{start_buster, Mode};
 use clap::Parser;
 use colored::Colorize;
-use futures::{stream, StreamExt}; // 0.3.27
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Client,
-}; // 0.11.14
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::{
     fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
 };
-use tokio; // 1.26.0, features = ["macros"]
+use tokio;
+
+mod buster;
+mod utils;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -23,6 +23,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
     long_about = "Directory buster tool written in Rust"
 )]
 struct Args {
+    command: Mode,
     target: String,
 
     #[arg(
@@ -159,60 +160,6 @@ fn parse_uas(file: Option<String>) -> Vec<String> {
     uas
 }
 
-fn random_element(vec: Vec<String>) -> Option<String> {
-    if vec.is_empty() {
-        return None;
-    }
-
-    let random_index = rand::random::<usize>() % vec.len();
-    let element = vec[random_index].clone();
-    Some(element)
-}
-
-async fn start_buster(arg: Args) {
-    let headers = parse_headers(arg.headers);
-    let target = fix_target(arg.target);
-    let wordlist = get_wordlist_with_ext(arg.wordlist, arg.extensions);
-    let threads = arg.threads;
-    let uas: Vec<String> = parse_uas(arg.user_agents);
-
-    let client = Client::builder().default_headers(headers).build().unwrap();
-
-    let bodies = stream::iter(wordlist)
-        .map(|value| {
-            let client = client.clone();
-            let full_url = target.replace("{value}", &value);
-            let ua = random_element(uas.clone());
-
-            tokio::spawn(async move {
-                let mut req = client.get(&full_url);
-
-                if ua.is_some() {
-                    req = req.header("User-Agent", ua.unwrap());
-                }
-
-                let resp = req.send().await?;
-                let status_code = resp.status().as_u16();
-
-                if status_code != 404 && status_code != 400 {
-                    let status_display = format!("{}", status_code).green();
-                    println!(
-                        "{} {} {} ({})",
-                        ">".magenta(),
-                        "Found:".cyan(),
-                        full_url,
-                        status_display
-                    );
-                }
-
-                resp.bytes().await
-            })
-        })
-        .buffer_unordered(threads);
-
-    bodies.for_each(|_| async {}).await;
-}
-
 fn debug_setting(key: &str, value: &dyn Display) {
     let key = format!("{: <10}", key).green();
     let value = format!("{}", value);
@@ -233,12 +180,16 @@ fn debug_settings_list(key: &str, values: &Vec<String>) {
 async fn main() {
     let args = Args::parse();
 
+    // Print the banner
     println!(
         "{} (v{}) {}",
         "Ruster".magenta(),
         VERSION,
         "Directory buster tool".bright_black()
     );
+
+    // Print the settings
+    debug_setting("Mode", &args.command);
     debug_setting("Target", &args.target);
 
     if args.extensions.is_some() {
@@ -259,5 +210,13 @@ async fn main() {
         debug_setting("User agents", &user_agents);
     }
 
-    start_buster(args).await;
+    // Start the buster
+    let mode = args.command;
+    let target = fix_target(args.target);
+    let headers = parse_headers(args.headers);
+    let wordlist = get_wordlist_with_ext(args.wordlist, args.extensions);
+    let uas: Vec<String> = parse_uas(args.user_agents);
+    let threads = args.threads;
+
+    start_buster(mode, target, headers, wordlist, uas, threads).await;
 }
