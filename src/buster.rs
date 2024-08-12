@@ -1,23 +1,21 @@
-use std::fmt;
-
 use clap::ValueEnum;
 use colored::Colorize;
-use futures::{stream, StreamExt};
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use reqwest::{header::HeaderMap, Client};
-use tokio;
+use std::{
+    fmt::{self, Write},
+    sync::Arc,
+};
+use tokio::sync::Semaphore;
 
 use crate::utils::random_element;
 
 #[derive(ValueEnum, Clone, Default, Debug, PartialEq)]
 pub enum Mode {
-    // Search for files or directories in the target
     #[default]
     Dir,
-    // Fuzz the target with the wordlist, replacing {fuzz} with the word
     Fuzz,
-    // Search for Virtual-Hosts in the target
     Vhost,
-    // Search for Subdomains in the target
     DNS,
 }
 
@@ -65,70 +63,100 @@ pub async fn start_buster(
     headers: HeaderMap,
     wordlist: Vec<String>,
     uas: Vec<String>,
-    threads: usize,
+    max_concurrent_tasks: usize,
 ) {
     let client = Client::builder().default_headers(headers).build().unwrap();
     let url = get_url(&target, &mode);
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks));
 
-    let bodies = stream::iter(wordlist)
+    // Create a progress bar to show the status of tasks
+    let pb = ProgressBar::new(wordlist.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+        )
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+            write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+        })
+        .progress_chars("#>-"),
+    );
+
+    let tasks: Vec<_> = wordlist
+        .into_iter()
         .map(|value| {
             let client = client.clone();
             let full_url = url.replace("{fuzz}", &value);
-            let ua = random_element(uas.clone());
-            let mut req = client.get(&full_url);
-            let mut vhost: Option<String> = None;
-
-            if ua.is_some() {
-                req = req.header("User-Agent", ua.unwrap());
-            }
-
-            if mode == Mode::Vhost {
-                let clean_url = full_url.replace("http://", "").replace("https://", "");
-                let host = clean_url.split("/").next().unwrap();
-                let host_with = format!("{}.{}", &value, host);
-                req = req.header("Host", &host_with);
-                vhost = Some(host_with);
-            }
+            let uas = uas.clone();
+            let mode = mode.clone();
+            let semaphore = semaphore.clone();
+            let pb = pb.clone(); // Clone the progress bar
 
             tokio::spawn(async move {
-                let resp = req.send().await?;
-                let status_code = resp.status().as_u16();
+                let _permit = semaphore.acquire().await.unwrap();
 
-                if status_code != 404 && status_code != 400 {
-                    let status_display = if status_code < 200 {
-                        format!("{}", status_code.to_string().cyan())
-                    } else if status_code >= 200 && status_code < 300 {
-                        format!("{}", status_code.to_string().green())
-                    } else if status_code >= 300 && status_code < 400 {
-                        format!("{}", status_code.to_string().yellow())
-                    } else if status_code >= 400 && status_code < 500 {
-                        format!("{}", status_code.to_string().red())
-                    } else {
-                        format!("{}", status_code.to_string().bright_red())
-                    };
+                let ua = random_element(uas);
+                let mut req = client.get(&full_url);
+                let mut vhost: Option<String> = None;
 
-                    let info = if vhost.is_some() {
-                        format!(" (VHost: {})", vhost.unwrap().bright_magenta())
-                            .bright_black()
-                            .to_string()
-                    } else {
-                        "".to_string()
-                    };
-
-                    println!(
-                        "{} {} {}{} ({})",
-                        ">".magenta(),
-                        "Found:".cyan(),
-                        full_url,
-                        info,
-                        status_display
-                    );
+                if let Some(ua) = ua {
+                    req = req.header("User-Agent", ua);
                 }
 
-                resp.bytes().await
+                if mode == Mode::Vhost {
+                    let clean_url = full_url.replace("http://", "").replace("https://", "");
+                    let host = clean_url.split("/").next().unwrap();
+                    let host_with = format!("{}.{}", value, host);
+                    req = req.header("Host", &host_with);
+                    vhost = Some(host_with);
+                }
+
+                match req.send().await {
+                    Ok(resp) => {
+                        let status_code = resp.status().as_u16();
+
+                        if status_code != 404 && status_code != 400 {
+                            let status_display = if status_code < 200 {
+                                format!("{}", status_code.to_string().cyan())
+                            } else if status_code >= 200 && status_code < 300 {
+                                format!("{}", status_code.to_string().green())
+                            } else if status_code >= 300 && status_code < 400 {
+                                format!("{}", status_code.to_string().yellow())
+                            } else if status_code >= 400 && status_code < 500 {
+                                format!("{}", status_code.to_string().red())
+                            } else {
+                                format!("{}", status_code.to_string().bright_red())
+                            };
+
+                            let info = if let Some(vhost) = vhost {
+                                format!(" (VHost: {})", vhost.bright_magenta())
+                                    .bright_black()
+                                    .to_string()
+                            } else {
+                                "".to_string()
+                            };
+
+                            pb.println(format!(
+                                "{} {} {}{} ({})",
+                                ">".magenta(),
+                                "Found:".cyan(),
+                                full_url,
+                                info,
+                                status_display,
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        pb.println(format!("{} {}: {}", "Error:".red(), "Request failed", e));
+                    }
+                }
+
+                pb.inc(1); // Increment the progress bar for each task
             })
         })
-        .buffer_unordered(threads);
+        .collect();
 
-    bodies.for_each(|_| async {}).await;
+    futures::future::join_all(tasks).await;
+    pb.finish_and_clear();
+    println!("{} {}", "Done".green(), "Busting completed".bright_black());
 }

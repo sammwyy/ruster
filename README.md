@@ -4,14 +4,14 @@ Directory buster tool written in Rust
 
 ## ⚡ Features
 
-- [X] Directory fuzzing
-- [X] Query fuzzing
-- [X] Subdomain fuzzing
-- [X] Extensions
-- [X] Randomize User agents
-- [X] Customize Headers
-- [X] Multithreading and parallelism
-- [X] Multiple modes
+- 📂 Directory fuzzing
+- 🔍 Query fuzzing
+- 🌐 Subdomain fuzzing
+- 📋 Extensions
+- 🎯 Randomize User agents
+- 🛠 Customize Headers
+- ⚡ Multithreading and parallelism
+- 🏷 Multiple modes
 
 ## 📋 Usage
 
@@ -44,12 +44,13 @@ ruster vhost -w /path/to/wordlist.txt http://example.com
 ## 📗 Arguments
 
 | Argument | Description | Type | Default | Required |
-| --- | --- | --- | --- | --- |
-| -e, --extensions | Extensions file to append to wordlist | File | None | ❌ |
-| -x, --header | Header to send with request | List(String) | None | ❌ |
-| -w, --wordlist | Path to wordlist | File | None | ✅ |
-| -t, --threads | Number of threads | Integer | 4 | ❌ |
-| -u, --user_agent | File with user agents | File | None | ❌ |
+| --- | --- | :-: | :-: | :-: |
+| -e, --extensions | 📂 Extensions file to append to wordlist | File | None | ❌ |
+| -x, --header | 🛠 Header to send with request | List(String) | None | ❌ |
+| -w, --wordlist | 📋 Path to wordlist | File | None | ✅ |
+| -t, --threads | ⚙️ Number of threads | Integer | 4 | ❌ |
+| -u, --user_agent | 🧑‍💻 File with user agents | File | None | ❌ |
+| -s, --subdomains | 🌐 Enable subdomain fuzzing mode | Bool | Off | ❌ |
 
 ## 📦 Build
 
@@ -74,4 +75,4 @@ Give a ⭐️ if this project helped you! Or buy me a coffeelatte 🙌 on [Ko-fi
 
 ## 📝 License
 
-Copyright © 2023 [Sammwy](https://github.com/sammwyy). This project is [MIT](LICENSE) licensed.
+Copyright © 2024 [Sammwy](https://github.com/sammwyy). This project is [MIT](LICENSE) licensed.

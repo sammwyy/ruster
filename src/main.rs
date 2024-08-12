@@ -36,6 +36,13 @@ struct Args {
     #[arg(short = 'x', long, help = "Add headers to the request")]
     headers: Option<Vec<String>>,
 
+    #[arg(
+        short = 's',
+        long,
+        help = "Treat wordlist as subdomains and append target domain"
+    )]
+    subdomains: bool,
+
     #[arg(short, long, default_value_t = 4, help = "Number of threads")]
     threads: usize,
 
@@ -68,27 +75,45 @@ fn get_wordlist(file_path: String) -> Vec<String> {
     wordlist
 }
 
-fn get_wordlist_with_ext(file_path: String, extension_path: Option<String>) -> Vec<String> {
+fn get_wordlist_with_ext(
+    file_path: String,
+    extension_path: Option<String>,
+    subdomains: bool,
+    target: &str,
+) -> Vec<String> {
     let wordlist = get_wordlist(file_path);
 
-    if extension_path.is_none() {
-        return wordlist;
-    }
+    let mut wordlist_with_ext = Vec::new();
 
-    let mut wordlist_with_ext: Vec<String> = Vec::new();
-    let extension_path = extension_path.unwrap();
-    let file = File::open(extension_path).unwrap();
-    let reader = BufReader::new(file);
+    if let Some(extension_path) = extension_path {
+        let file = File::open(extension_path).unwrap();
+        let reader = BufReader::new(file);
 
-    for line in reader.lines() {
-        let line = line.unwrap();
+        for line in reader.lines() {
+            let line = line.unwrap();
 
-        if line.is_empty() || line.starts_with("#") {
-            continue;
+            if line.is_empty() || line.starts_with("#") {
+                continue;
+            }
+
+            for word in &wordlist {
+                let mut word_with_ext = line.replace("%", word);
+
+                if subdomains {
+                    word_with_ext = format!("{}.{}", word_with_ext, target);
+                }
+
+                wordlist_with_ext.push(word_with_ext);
+            }
         }
+    } else {
+        for word in wordlist {
+            let word = if subdomains {
+                format!("{}.{}", word, target)
+            } else {
+                word
+            };
 
-        for word in &wordlist {
-            let word = line.replace("%", word);
             wordlist_with_ext.push(word);
         }
     }
@@ -211,7 +236,7 @@ async fn main() {
     let mode = args.command;
     let target = args.target;
     let headers = parse_headers(args.headers);
-    let wordlist = get_wordlist_with_ext(args.wordlist, args.extensions);
+    let wordlist = get_wordlist_with_ext(args.wordlist, args.extensions, args.subdomains, &target);
     let uas: Vec<String> = parse_uas(args.user_agents);
     let threads = args.threads;
 
